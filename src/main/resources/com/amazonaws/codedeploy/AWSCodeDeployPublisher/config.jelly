@@ -38,9 +38,9 @@
   </f:entry>
   <f:entry name="fileType" title="File type" field="fileType">
     <select name="fileType">
-        <option value="Zip">zip</option>
-        <option value="Tar">tar</option>
-        <option value="Tgz">tar.gz</option>
+        <f:option value="Zip" selected="${instance.getFileType() == 'Zip'}">zip</f:option>
+        <f:option value="Tar" selected="${instance.getFileType() == 'Tar'}">tar</f:option>
+        <f:option value="Tgz" selected="${instance.getFileType() == 'Tgz'}">tar.gz</f:option>
     </select>
   </f:entry>
 

@@ -231,7 +231,7 @@ public class AWSCodeDeployPublisher extends Publisher {
                 throw new IllegalArgumentException("No workspace present for the build.");
             }
 
-            final RevisionLocation revisionLocation = compressAndUpload(aws, projectName, getSourceDirectory(workspace), this.fileType);
+            final RevisionLocation revisionLocation = compressAndUpload(aws, projectName, getSourceDirectory(workspace), getFileTypeFromEnv());
             registerRevision(aws, revisionLocation);
             if ("onlyRevision".equals(deploymentMethod)){
               success = true;
@@ -319,11 +319,8 @@ public class AWSCodeDeployPublisher extends Publisher {
           if(reader !=null){reader.close();}
         }
 
-        if (fileType == null || fileType.equals("Tar")) {
-        	extension = ".zip";
-            bundleType = BundleType.Zip;
-        } else if (fileType.equals("Tar")) {
-            extension = ".tar";
+        if (fileType.equals("Tar")) {
+        	extension = ".tar";
             bundleType = BundleType.Tar;
         } else if (fileType.equals("Tgz")) {
             extension = ".tar.gz";
@@ -372,7 +369,7 @@ public class AWSCodeDeployPublisher extends Publisher {
 
             logger.println("Packaging files into " + tarzipFile.getAbsolutePath());
 
-			if (fileType == null || fileType.equals("Zip")) {
+			if (fileType.equals("Zip")) {
 	        	sourceDirectory.zip(
 	                fileOutputStream,
 	                new DirScanner.Glob(this.includes, this.excludes)
@@ -759,6 +756,10 @@ public class AWSCodeDeployPublisher extends Publisher {
     public int getProxyPort() {
         return proxyPort;
     }
+    
+    public String getFileType() {
+        return fileType;
+    }
 
     public String getApplicationNameFromEnv() {
         return Util.replaceMacro(this.applicationName, envVars);
@@ -782,5 +783,9 @@ public class AWSCodeDeployPublisher extends Publisher {
 
     public String getSubdirectoryFromEnv() {
         return Util.replaceMacro(this.subdirectory, envVars);
+    }
+
+    public String getFileTypeFromEnv() {
+        return Util.replaceMacro(this.fileType, envVars);
     }
 }
