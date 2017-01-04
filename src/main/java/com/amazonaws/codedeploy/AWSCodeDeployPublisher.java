@@ -230,15 +230,13 @@ public class AWSCodeDeployPublisher extends Publisher {
             if (workspace == null) {
                 throw new IllegalArgumentException("No workspace present for the build.");
             }
-            final FilePath sourceDirectory = getSourceDirectory(workspace);
-            final RevisionLocation revisionLocation = compressAndUpload(aws, projectName, getSourceDirectory(build.getWorkspace()), this.fileType);
+
+            final RevisionLocation revisionLocation = compressAndUpload(aws, projectName, getSourceDirectory(workspace), this.fileType);
             registerRevision(aws, revisionLocation);
             if ("onlyRevision".equals(deploymentMethod)){
               success = true;
             } else {
-
               String deploymentId = createDeployment(aws, revisionLocation);
-
               success = waitForDeployment(aws, deploymentId);
             }
 
@@ -303,6 +301,7 @@ public class AWSCodeDeployPublisher extends Publisher {
         //File zipFile = null;
         File versionFile;
         String extension;
+        File tarzipFile = null;
 		BundleType bundleType;
         versionFile = new File(sourceDirectory + "/" + versionFileName);
 
@@ -335,17 +334,15 @@ public class AWSCodeDeployPublisher extends Publisher {
         }
 
         // Kolla detta
-        /*if (version != null){
-          zipFile = new File("/tmp/" + projectName + "-" + version + ".zip");
-          final boolean fileCreated = zipFile.createNewFile();
+        if (version != null){
+          tarzipFile = new File("/tmp/" + projectName + "-" + version + extension);
+          final boolean fileCreated = tarzipFile.createNewFile();
           if (!fileCreated) {
-            logger.println("File already exists, overwriting: " + zipFile.getPath());
+            logger.println("File already exists, overwriting: " + tarzipFile.getPath());
           }
         } else {
-          zipFile = File.createTempFile(projectName + "-", ".zip");
-        }*/
-
-        File tarzipFile = File.createTempFile(projectName + "-", extension);
+          tarzipFile = File.createTempFile(projectName + "-", extension);
+        }
 
         String key;
         File appspec;
@@ -358,7 +355,7 @@ public class AWSCodeDeployPublisher extends Publisher {
             throw new IllegalArgumentException("S3 Bucket field cannot contain any subdirectories.  Bucket name only!");
         }
 
-        try {
+        try (java.io.FileOutputStream fileOutputStream = new FileOutputStream(tarzipFile)) {
             if (this.deploymentGroupAppspec) {
                 appspec = new File(sourceDirectory + "/appspec." + deploymentGroupName + ".yml");
                 if (appspec.exists()) {
@@ -377,23 +374,23 @@ public class AWSCodeDeployPublisher extends Publisher {
 
 			if (fileType == null || fileType.equals("Zip")) {
 	        	sourceDirectory.zip(
-	                    new FileOutputStream(tarzipFile),
-	                    new DirScanner.Glob(this.includes, this.excludes)
+	                fileOutputStream,
+	                new DirScanner.Glob(this.includes, this.excludes)
 		        );
 	        } else if (fileType.equals("Tar")) {
 	            sourceDirectory.tar(
-                    new FileOutputStream(tarzipFile),
+                    fileOutputStream,
                     new DirScanner.Glob(this.includes, this.excludes)
             	);
 	        } else if (fileType.equals("Tgz")) {
 	            sourceDirectory.tar(
-                    TarCompression.GZIP.compress(new FileOutputStream(tarzipFile)),
+                    TarCompression.GZIP.compress(fileOutputStream),
                     new DirScanner.Glob(this.includes, this.excludes)
             	);
 	        } else {
 	        	sourceDirectory.zip(
-	                    new FileOutputStream(tarzipFile),
-	                    new DirScanner.Glob(this.includes, this.excludes)
+	                fileOutputStream,
+	                new DirScanner.Glob(this.includes, this.excludes)
 		        );
 	        }
 
