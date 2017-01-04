@@ -32,6 +32,7 @@ import com.amazonaws.services.codedeploy.model.RegisterApplicationRevisionReques
 import com.amazonaws.services.codedeploy.model.S3Location;
 
 import hudson.FilePath;
+import hudson.FilePath.TarCompression;
 import hudson.Launcher;
 import hudson.Extension;
 import hudson.Util;
@@ -98,6 +99,7 @@ public class AWSCodeDeployPublisher extends Publisher {
     private final String subdirectory;
     private final String proxyHost;
     private final int proxyPort;
+    private final String fileType;
 
     private final String awsAccessKey;
     private final String awsSecretKey;
@@ -131,7 +133,8 @@ public class AWSCodeDeployPublisher extends Publisher {
             String proxyHost,
             int proxyPort,
             String excludes,
-            String subdirectory) {
+            String subdirectory,
+            String fileType) {
 
         this.externalId = externalId;
         this.applicationName = applicationName;
@@ -147,6 +150,7 @@ public class AWSCodeDeployPublisher extends Publisher {
         this.subdirectory = subdirectory;
         this.proxyHost = proxyHost;
         this.proxyPort = proxyPort;
+        this.fileType = fileType;
         this.credentials = credentials;
         this.deploymentMethod = deploymentMethod;
         this.versionFileName = versionFileName;
@@ -227,8 +231,7 @@ public class AWSCodeDeployPublisher extends Publisher {
                 throw new IllegalArgumentException("No workspace present for the build.");
             }
             final FilePath sourceDirectory = getSourceDirectory(workspace);
-            final RevisionLocation revisionLocation = zipAndUpload(aws, projectName, sourceDirectory);
-
+            final RevisionLocation revisionLocation = compressAndUpload(aws, projectName, getSourceDirectory(build.getWorkspace()), this.fileType);
             registerRevision(aws, revisionLocation);
             if ("onlyRevision".equals(deploymentMethod)){
               success = true;
@@ -296,10 +299,11 @@ public class AWSCodeDeployPublisher extends Publisher {
         }
     }
 
-    private RevisionLocation zipAndUpload(AWSClients aws, String projectName, FilePath sourceDirectory) throws IOException, InterruptedException, IllegalArgumentException {
-
-        File zipFile = null;
+    private RevisionLocation compressAndUpload(AWSClients aws, String projectName, FilePath sourceDirectory, String fileType) throws IOException, InterruptedException, IllegalArgumentException {
+        //File zipFile = null;
         File versionFile;
+        String extension;
+		BundleType bundleType;
         versionFile = new File(sourceDirectory + "/" + versionFileName);
 
         InputStreamReader reader = null;
@@ -316,7 +320,22 @@ public class AWSCodeDeployPublisher extends Publisher {
           if(reader !=null){reader.close();}
         }
 
-        if (version != null){
+        if (fileType == null || fileType.equals("Tar")) {
+        	extension = ".zip";
+            bundleType = BundleType.Zip;
+        } else if (fileType.equals("Tar")) {
+            extension = ".tar";
+            bundleType = BundleType.Tar;
+        } else if (fileType.equals("Tgz")) {
+            extension = ".tar.gz";
+            bundleType = BundleType.Tgz;
+        } else {
+        	extension = ".zip";
+            bundleType = BundleType.Zip;
+        }
+
+        // Kolla detta
+        /*if (version != null){
           zipFile = new File("/tmp/" + projectName + "-" + version + ".zip");
           final boolean fileCreated = zipFile.createNewFile();
           if (!fileCreated) {
@@ -324,7 +343,9 @@ public class AWSCodeDeployPublisher extends Publisher {
           }
         } else {
           zipFile = File.createTempFile(projectName + "-", ".zip");
-        }
+        }*/
+
+        File tarzipFile = File.createTempFile(projectName + "-", extension);
 
         String key;
         File appspec;
@@ -351,35 +372,50 @@ public class AWSCodeDeployPublisher extends Publisher {
 
             }
 
-            logger.println("Zipping files into " + zipFile.getAbsolutePath());
 
-            FileOutputStream outputStream = new FileOutputStream(zipFile);
-            try {
-                sourceDirectory.zip(
-                        outputStream,
-                        new DirScanner.Glob(this.includes, this.excludes)
-                );
-            } finally {
-                outputStream.close();
-            }
+            logger.println("Packaging files into " + tarzipFile.getAbsolutePath());
+
+			if (fileType == null || fileType.equals("Zip")) {
+	        	sourceDirectory.zip(
+	                    new FileOutputStream(tarzipFile),
+	                    new DirScanner.Glob(this.includes, this.excludes)
+		        );
+	        } else if (fileType.equals("Tar")) {
+	            sourceDirectory.tar(
+                    new FileOutputStream(tarzipFile),
+                    new DirScanner.Glob(this.includes, this.excludes)
+            	);
+	        } else if (fileType.equals("Tgz")) {
+	            sourceDirectory.tar(
+                    TarCompression.GZIP.compress(new FileOutputStream(tarzipFile)),
+                    new DirScanner.Glob(this.includes, this.excludes)
+            	);
+	        } else {
+	        	sourceDirectory.zip(
+	                    new FileOutputStream(tarzipFile),
+	                    new DirScanner.Glob(this.includes, this.excludes)
+		        );
+	        }
+
 
             if (prefix.isEmpty()) {
-                key = zipFile.getName();
+                key = tarzipFile.getName();
             } else {
                 key = Util.replaceMacro(prefix, envVars);
                 if (prefix.endsWith("/")) {
-                    key += zipFile.getName();
+                    key += tarzipFile.getName();
                 } else {
-                    key += "/" + zipFile.getName();
+                    key += "/" + tarzipFile.getName();
                 }
             }
-            logger.println("Uploading zip to s3://" + bucket + "/" + key);
-            PutObjectResult s3result = aws.s3.putObject(bucket, key, zipFile);
+
+            logger.println("Uploading package to s3://" + bucket + "/" + key);
+            PutObjectResult s3result = aws.s3.putObject(bucket, key, tarzipFile);
 
             S3Location s3Location = new S3Location();
             s3Location.setBucket(bucket);
             s3Location.setKey(key);
-            s3Location.setBundleType(BundleType.Zip);
+            s3Location.setBundleType(bundleType);
             s3Location.setETag(s3result.getETag());
 
             RevisionLocation revisionLocation = new RevisionLocation();
@@ -388,9 +424,9 @@ public class AWSCodeDeployPublisher extends Publisher {
 
             return revisionLocation;
         } finally {
-            final boolean deleted = zipFile.delete();
+            final boolean deleted = tarzipFile.delete();
             if (!deleted) {
-                logger.println("Failed to clean up file " + zipFile.getPath());
+                logger.println("Failed to clean up file " + tarzipFile.getPath());
             }
         }
     }
